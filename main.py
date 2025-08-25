@@ -1,4 +1,5 @@
 import os
+import sys  # Importa sys para manejar rutas de importación
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -8,22 +9,34 @@ import json
 from werkzeug.utils import secure_filename
 from database import get_db_connection
 
+# --- Configuración para PythonAnywhere ---
+# Añade la ruta del proyecto al path de Python si no está
+project_path = '/home/dagahitone/alertabackapi'
+if project_path not in sys.path:
+    sys.path.append(project_path)
+
 # Carga las variables de entorno
 load_dotenv()
 app = Flask(__name__)
 
 # Configura los orígenes que pueden acceder a tu API
+# En producción, solo deberías permitir el dominio de tu frontend
+# Si el front y el back están en el mismo dominio (ej. myapp.com), no necesitas CORS
 origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
+    "http://localhost:5173",  # Para desarrollo local
+    "http://127.0.0.1:5173",  # Para desarrollo local
+    # Si tu frontend se despliega en 'tu-dominio.com', añade esa URL aquí
 ]
 CORS(app, resources={r"/*": {"origins": origins}})
 
 # Directorio para guardar las imágenes subidas
 UPLOAD_FOLDER = 'uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+# En PythonAnywhere, la ruta de uploads debe ser absoluta
+# y accesible desde el directorio de la aplicación web
+full_upload_path = os.path.join(project_path, UPLOAD_FOLDER)
+if not os.path.exists(full_upload_path):
+    os.makedirs(full_upload_path)
+app.config['UPLOAD_FOLDER'] = full_upload_path
 
 # --- Funciones de Ayuda ---
 
@@ -31,13 +44,16 @@ def format_user_data(user_data):
     """
     Formatea los datos del usuario de un diccionario a un formato estandarizado.
     """
+    # Se añade validación para evitar errores si los datos no existen
+    if not user_data:
+        return None
     return {
-        "id": user_data["id"],
-        "name": user_data["name"],
-        "house_number": user_data["house_number"],
-        "phone": user_data["phone"],
-        "lat": user_data["lat"],
-        "lng": user_data["lng"]
+        "id": user_data.get("id"),
+        "name": user_data.get("name"),
+        "house_number": user_data.get("house_number"),
+        "phone": user_data.get("phone"),
+        "lat": user_data.get("lat"),
+        "lng": user_data.get("lng")
     }
 
 @app.get("/")
@@ -48,9 +64,9 @@ def read_root():
 @app.post("/login/")
 def login_user():
     data = request.json
-    house_number = data.get("houseNumber")#type: ignore
-    phone = data.get("phone")#type: ignore
-    password = data.get("password")#type: ignore
+    house_number = data.get("houseNumber") if data else None
+    phone = data.get("phone") if data else None
+    password = data.get("password") if data else None
 
     if not all([house_number, phone, password]):
         return jsonify({"detail": "Faltan datos de credenciales"}), 400
@@ -67,7 +83,8 @@ def login_user():
         )
         user_data = cursor.fetchone()
 
-        if user_data is None or user_data['password'] != password:#type: ignore
+        # Usar una verificación de hash para la contraseña es más seguro
+        if user_data is None or user_data['password'] != password:
             return jsonify({"detail": "Credenciales incorrectas"}), 401
         
         formatted_user = format_user_data(user_data)
@@ -88,7 +105,8 @@ def get_user(user_id):
     
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id, name, house_number, phone, lat, lng FROM users WHERE id = %s", (f"user-{user_id}",))
+        # La consulta a la base de datos no usa 'user-'. Se corrige el valor
+        cursor.execute("SELECT id, name, house_number, phone, lat, lng FROM users WHERE id = %s", (user_id,))
         user_data = cursor.fetchone()
         
         if user_data is None:
@@ -108,7 +126,7 @@ def get_user(user_id):
 def create_user():
     data = request.json
     
-    if not all([data.get("id"), data.get("name"), data.get("houseNumber"), data.get("phone"), data.get("password"), data.get("location")]):#type: ignore
+    if not data or not all([data.get("id"), data.get("name"), data.get("houseNumber"), data.get("phone"), data.get("password"), data.get("location")]):
         return jsonify({"detail": "Datos de usuario incompletos"}), 400
 
     conn = get_db_connection()
@@ -122,23 +140,23 @@ def create_user():
         VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         user_data = (
-            data.get('id'),#type: ignore
-            data.get("name"),#type: ignore
-            data.get("houseNumber"),#type: ignore
-            data.get("phone"),#type: ignore
-            data.get("password"),#type: ignore
-            data.get("location").get("lat"),#type: ignore
-            data.get("location").get("lng"),#type: ignore
+            data.get('id'),
+            data.get("name"),
+            data.get("houseNumber"),
+            data.get("phone"),
+            data.get("password"),
+            data.get("location").get("lat"),
+            data.get("location").get("lng"),
         )
         cursor.execute(query, user_data)
         conn.commit()
         
         return jsonify({
-            "id": data.get('id'),#type: ignore
-            "name": data.get('name'),#type: ignore
-            "houseNumber": data.get('houseNumber'),#type: ignore
-            "phone": data.get('phone'),#type: ignore
-            "location": data.get('location')#type: ignore
+            "id": data.get('id'),
+            "name": data.get('name'),
+            "houseNumber": data.get('houseNumber'),
+            "phone": data.get('phone'),
+            "location": data.get('location')
         }), 201
     
     except mysql.connector.Error as err:
@@ -163,11 +181,11 @@ def get_all_users():
         formatted_users = []
         for user_data in users:
             formatted_user = {
-                "id": user_data["id"],#type: ignore
-                "name": user_data["name"],#type: ignore
-                "houseNumber": user_data["house_number"],#type: ignore
-                "phone": user_data["phone"],#type: ignore
-                "location": {"lat": user_data["lat"], "lng": user_data["lng"]}#type: ignore
+                "id": user_data["id"],
+                "name": user_data["name"],
+                "houseNumber": user_data["house_number"],
+                "phone": user_data["phone"],
+                "location": {"lat": user_data["lat"], "lng": user_data["lng"]}
             }
             formatted_users.append(formatted_user)
         return jsonify(formatted_users)
@@ -180,7 +198,6 @@ def get_all_users():
 # Endpoint para crear una alerta
 @app.post("/alerts/")
 def create_alert():
-    # ✅ Lógica correcta para manejar la carga de archivos y datos
     alert_type = request.form.get("type")
     description = request.form.get("description")
     user_id = request.form.get("user_id")
@@ -191,8 +208,8 @@ def create_alert():
         return jsonify({"detail": "Faltan datos para crear la alerta"}), 400
 
     try:
-        location = json.loads(location_json)#type: ignore
-    except json.JSONDecodeError:
+        location = json.loads(location_json)
+    except (json.JSONDecodeError, TypeError):
         return jsonify({"detail": "Datos de ubicación inválidos"}), 400
     
     conn = get_db_connection()
@@ -203,11 +220,16 @@ def create_alert():
     try:
         image_url = None
         if image_file:
-            filename = secure_filename(image_file.filename)#type: ignore
+            filename = secure_filename(image_file.filename)
+            # Usa la ruta de subida configurada para el entorno de producción
             image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             image_file.save(image_path)
             
-            image_url = f"http://127.0.0.1:5173/uploads/{filename}"
+            # La URL para acceder a la imagen debe ser relativa al dominio
+            # Por ejemplo: https://dagahitone.pythonanywhere.com/uploads/imagen.jpg
+            # Si tu app está en un subdominio: https://tusubdominio.pythonanywhere.com/uploads/imagen.jpg
+            # La URL de PythonAnywhere es: http://dagahitone.pythonanywhere.com/
+            image_url = f"/uploads/{filename}"
 
         query_alert = """
         INSERT INTO alerts (type, description, lat, lng, image, user_id)
@@ -255,6 +277,7 @@ def create_alert():
         cursor.close()
         conn.close()
 
+# Manejo de la ruta para servir imágenes estáticas
 @app.route('/uploads/<path:filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
@@ -274,7 +297,7 @@ def get_alerts_by_group(group_id):
         if not user_ids_data:
             return jsonify([]), 200
 
-        user_ids = [member['user_id'] for member in user_ids_data] #type: ignore
+        user_ids = [member['user_id'] for member in user_ids_data]
 
         placeholders = ', '.join(['%s'] * len(user_ids))
         query = f"""
@@ -286,7 +309,7 @@ def get_alerts_by_group(group_id):
             WHERE a.user_id IN ({placeholders})
             ORDER BY a.timestamp DESC
         """
-        cursor.execute(query, tuple(user_ids))#type: ignore
+        cursor.execute(query, tuple(user_ids))
         alerts_data = cursor.fetchall()
         
         if not alerts_data:
@@ -295,21 +318,26 @@ def get_alerts_by_group(group_id):
         formatted_alerts = []
         for alert_data in alerts_data:
             formatted_user = {
-                "id": alert_data["user_id"],#type: ignore
-                "name": alert_data["name"],#type: ignore
-                "houseNumber": alert_data["house_number"],#type: ignore
-                "phone": alert_data["phone"],#type: ignore
-                "location": {"lat": alert_data["user_lat"], "lng": alert_data["user_lng"]}#type: ignore
+                "id": alert_data["user_id"],
+                "name": alert_data["name"],
+                "houseNumber": alert_data["house_number"],
+                "phone": alert_data["phone"],
+                "location": {"lat": alert_data["user_lat"], "lng": alert_data["user_lng"]}
             }
             
+            # Ajusta la URL de la imagen para que sea relativa y funcione en producción
+            image_url = alert_data["image"]
+            if image_url and 'http://127.0.0.1:5173' in image_url:
+                image_url = image_url.replace('http://127.0.0.1:5173', '')
+
             formatted_alert = {
-                "id": alert_data["id"],#type: ignore
-                "type": alert_data["type"],#type: ignore
-                "description": alert_data["description"],#type: ignore
-                "location": {"lat": alert_data["lat"], "lng": alert_data["lng"]},#type: ignore
-                "image": alert_data["image"],#type: ignore
-                "user_id": alert_data["user_id"],#type: ignore
-                "timestamp": alert_data["timestamp"],#type: ignore
+                "id": alert_data["id"],
+                "type": alert_data["type"],
+                "description": alert_data["description"],
+                "location": {"lat": alert_data["lat"], "lng": alert_data["lng"]},
+                "image": image_url,
+                "user_id": alert_data["user_id"],
+                "timestamp": alert_data["timestamp"],
                 "user": formatted_user
             }
             formatted_alerts.append(formatted_alert)
@@ -322,6 +350,7 @@ def get_alerts_by_group(group_id):
         cursor.close()
         conn.close()
 
+# Esto solo se usa en desarrollo local. PythonAnywhere no lo usa.
 if __name__ == "__main__":
     from waitress import serve
     serve(app, host="0.0.0.0", port=5173)

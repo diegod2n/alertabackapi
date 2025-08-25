@@ -1,0 +1,38 @@
+-- Tabla para los usuarios
+CREATE TABLE users (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    house_number VARCHAR(255) NOT NULL,
+    phone VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL,
+    lat DECIMAL(10, 8) NOT NULL,
+    lng DECIMAL(11, 8) NOT NULL
+);
+
+-- Tabla para los grupos
+CREATE TABLE groups (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
+
+-- Tabla de unión para la relación "muchos a muchos" entre usuarios y grupos
+CREATE TABLE user_group (
+    user_id VARCHAR(255),
+    group_id VARCHAR(255),
+    PRIMARY KEY (user_id, group_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+);
+
+-- Tabla para las alertas
+CREATE TABLE alerts (
+    id VARCHAR(255) PRIMARY KEY,
+    type VARCHAR(50) NOT NULL,
+    description TEXT,
+    timestamp TIMESTAMP NOT NULL,
+    user_id VARCHAR(255),
+    lat DECIMAL(10, 8) NOT NULL,
+    lng DECIMAL(11, 8) NOT NULL,
+    image VARCHAR(255),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
